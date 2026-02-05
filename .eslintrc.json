@@ -1,0 +1,62 @@
+{
+    "root": true,
+    "env": {
+        "node": true,
+        "es2021": true
+    },
+    "extends": ["eslint:recommended", "prettier"],
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+    },
+    "rules": {
+        "no-unused-vars": "warn",
+        "no-console": "off"
+    },
+    "overrides": [
+        {
+            "files": ["public/assets/js/**/*.js"],
+            "env": {
+                "browser": true,
+                "node": false
+            },
+            "globals": {
+                "fetchAPI": "readonly",
+                "checkAuth": "readonly",
+                "currentUser": "writable",
+                "allContent": "writable",
+                "bootstrap": "readonly",
+                "formatDate": "readonly",
+                "formatTime": "readonly",
+                "formatDateInput": "readonly",
+                "autoFormatTime": "readonly",
+                "renderGenreButtons": "readonly",
+                "openEditContentModal": "readonly",
+                "closeEditContentModal": "readonly",
+                "openModal": "readonly",
+                "closeModal": "readonly",
+                "loadCountries": "readonly",
+                "getSelectedLangs": "readonly",
+                "escapeHtml": "readonly",
+                "renderNav": "readonly",
+                "fetchLikes": "readonly",
+                "updateLikesVisuals": "readonly",
+                "toggleLike": "readonly",
+                "safeAddEventListener": "readonly"
+            },
+            "rules": {
+                "no-unused-vars": "off"
+            }
+        },
+        {
+            "files": ["scripts/**/*.js"],
+            "env": {
+                "node": true
+            },
+            "rules": {
+                "no-console": "off",
+                "no-unused-vars": "off"
+            }
+        }
+    ]
+}

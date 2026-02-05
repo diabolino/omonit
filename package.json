@@ -1,0 +1,23 @@
+{
+  "name": "omg-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.4",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "form-data": "^4.0.5",
+    "fs-extra": "^11.3.3",
+    "irc-framework": "^4.14.0",
+    "mysql2": "^3.16.3",
+    "socket.io": "^4.8.3",
+    "xml2js": "^0.6.2"
+  }
+}
