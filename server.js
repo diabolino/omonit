@@ -1,6 +1,6 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require("socket.io");
+const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -12,28 +12,48 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Fichier de persistance des logs
+const HISTORY_FILE = path.join(__dirname, 'history.json');
+
 app.use(express.static('public'));
+// Dossier covers accessible
+app.use('/covers', express.static(path.join(__dirname, 'temp')));
 app.use(express.json());
 
-// --- Gestion des Logs avec Buffer (Historique) ---
-const MAX_LOG_HISTORY = 100;
+// --- Gestion des Logs avec Persistance ---
+const MAX_LOG_HISTORY = 500; // Augmenté pour garder plus d'historique
 let logHistory = [];
+
+// Chargement au démarrage
+if (fs.existsSync(HISTORY_FILE)) {
+    try {
+        const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
+        logHistory = JSON.parse(raw);
+        console.log(`📂 Historique chargé (${logHistory.length} entrées)`);
+    } catch (e) {
+        console.error('Erreur lecture historique:', e.message);
+        logHistory = [];
+    }
+}
 
 const addToHistory = (logObj) => {
     logHistory.push(logObj);
     if (logHistory.length > MAX_LOG_HISTORY) logHistory.shift();
+
+    // Sauvegarde asynchrone pour ne pas bloquer
+    fs.writeFile(HISTORY_FILE, JSON.stringify(logHistory, null, 2), (err) => {
+        if (err) console.error('Erreur sauvegarde historique:', err);
+    });
 };
 
 // --- Initialisation des services ---
 let ircClient = null;
 const processor = new Processor(io, null);
 
-// Surcharge de la méthode log pour l'historique
-const originalLog = processor.log.bind(processor);
+// Surcharge du logger
 processor.log = (msg, type = 'info') => {
     const logObj = { message: msg, type, timestamp: new Date().toLocaleTimeString() };
     addToHistory(logObj);
-    // On émet l'objet complet au lieu juste du message
     io.emit('log', logObj);
     console.log(`[${logObj.timestamp}] ${msg}`);
 };
@@ -42,12 +62,13 @@ ircClient = initIRC(processor);
 processor.irc = ircClient;
 
 // --- Routes API ---
-
 app.get('/api/keywords', (req, res) => {
     try {
         const data = fs.readFileSync('keywords.json', 'utf8');
         res.json(JSON.parse(data));
-    } catch(e) { res.json([]); }
+    } catch (e) {
+        res.json([]);
+    }
 });
 
 app.post('/api/keywords', (req, res) => {
@@ -60,18 +81,12 @@ app.post('/api/keywords', (req, res) => {
         } else {
             res.status(400).json({ error: 'Format invalide' });
         }
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/status', (req, res) => {
-    res.json({
-        irc: ircClient && ircClient.connected ? 'online' : 'offline',
-        uptime: process.uptime()
-    });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 io.on('connection', (socket) => {
-    // Envoyer l'historique au nouveau client
     socket.emit('history', logHistory);
 });
 
