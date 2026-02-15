@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -5,26 +7,25 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const initIRC = require('./src/services/ircService');
 const Processor = require('./src/services/processing');
+const { initIRCListener, initIRCAnnouncer } = require('./src/services/ircService');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Fichier de persistance des logs
-const HISTORY_FILE = path.join(__dirname, 'history.json');
-
+// ---------- Static / middleware ----------
 app.use(express.static('public'));
-// Dossier covers accessible
-app.use('/covers', express.static(path.join(__dirname, 'temp')));
 app.use(express.json());
 
-// --- Gestion des Logs avec Persistance ---
-const MAX_LOG_HISTORY = 500; // Augmenté pour garder plus d'historique
+// Dossier covers (si tu l'utilises)
+app.use('/covers', express.static(path.join(__dirname, 'temp')));
+
+// ---------- Log history (persisté) ----------
+const HISTORY_FILE = path.join(__dirname, 'history.json');
+const MAX_LOG_HISTORY = 500;
 let logHistory = [];
 
-// Chargement au démarrage
 if (fs.existsSync(HISTORY_FILE)) {
     try {
         const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
@@ -40,17 +41,15 @@ const addToHistory = (logObj) => {
     logHistory.push(logObj);
     if (logHistory.length > MAX_LOG_HISTORY) logHistory.shift();
 
-    // Sauvegarde asynchrone pour ne pas bloquer
     fs.writeFile(HISTORY_FILE, JSON.stringify(logHistory, null, 2), (err) => {
-        if (err) console.error('Erreur sauvegarde historique:', err);
+        if (err) console.error('Erreur sauvegarde historique:', err.message || err);
     });
 };
 
-// --- Initialisation des services ---
-let ircClient = null;
-const processor = new Processor(io, null);
+// ---------- Processor ----------
+const processor = new Processor(io);
 
-// Surcharge du logger
+// Surcharge logger (socket + history)
 processor.log = (msg, type = 'info') => {
     const logObj = { message: msg, type, timestamp: new Date().toLocaleTimeString() };
     addToHistory(logObj);
@@ -58,10 +57,27 @@ processor.log = (msg, type = 'info') => {
     console.log(`[${logObj.timestamp}] ${msg}`);
 };
 
-ircClient = initIRC(processor);
-processor.irc = ircClient;
+// ---------- IRC (READ + WRITE) ----------
+const ircAnnouncer = initIRCAnnouncer(processor); // écriture
+const ircListener = initIRCListener(processor); // lecture
 
-// --- Routes API ---
+// ✅ Compatibilité: si Processor a setIrcAnnouncer/setIrcListener on les utilise,
+// sinon on fallback sur des propriétés simples.
+if (typeof processor.setIrcAnnouncer === 'function') {
+    processor.setIrcAnnouncer(ircAnnouncer);
+} else {
+    processor.ircAnnouncer = ircAnnouncer;
+    // beaucoup de projets utilisent processor.irc pour faire say()
+    processor.irc = ircAnnouncer;
+}
+
+if (typeof processor.setIrcListener === 'function') {
+    processor.setIrcListener(ircListener);
+} else {
+    processor.ircListener = ircListener;
+}
+
+// ---------- API ----------
 app.get('/api/keywords', (req, res) => {
     try {
         const data = fs.readFileSync('keywords.json', 'utf8');
@@ -74,22 +90,24 @@ app.get('/api/keywords', (req, res) => {
 app.post('/api/keywords', (req, res) => {
     try {
         const newKeywords = req.body;
-        if (Array.isArray(newKeywords)) {
-            fs.writeFileSync('keywords.json', JSON.stringify(newKeywords, null, 2));
-            processor.log('Configuration des mots-clés mise à jour.', 'success');
-            res.json({ success: true });
-        } else {
-            res.status(400).json({ error: 'Format invalide' });
+        if (!Array.isArray(newKeywords)) {
+            return res.status(400).json({ error: 'Format invalide (Array attendu)' });
         }
+
+        fs.writeFileSync('keywords.json', JSON.stringify(newKeywords, null, 2));
+        processor.log('Configuration des mots-clés mise à jour.', 'success');
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
+// ---------- Socket.io ----------
 io.on('connection', (socket) => {
     socket.emit('history', logHistory);
 });
 
+// ---------- Start ----------
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Serveur Web lancé sur http://localhost:${PORT}`);

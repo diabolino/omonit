@@ -40,11 +40,11 @@ class Processor {
             // 2. Extraction liens
             const imgMatch = xmlData.match(/https:\/\/i\.omgwtfnzbs\.org\/pr0n\/[0-9a-z_\/]+\.jpg/);
             const nzbMatch = xmlData.match(/https:\/\/api\.omgwtfnzbs\.org\/nzb\/\?id=[^<"]+/);
-            
+
             const imgUrl = imgMatch ? imgMatch[0] : null;
             let nzbUrl = nzbMatch ? nzbMatch[0].replace(/&amp;/g, '&') : null;
 
-            if (!imgUrl) throw new Error("Image non trouvée dans le XML");
+            if (!imgUrl) throw new Error('Image non trouvée dans le XML');
 
             // 3. Annonce IRC avec le routage par catégorie
             // IMPORTANT : On passe la category ici
@@ -61,16 +61,16 @@ class Processor {
 
             if (isPornLover) {
                 this.log(`Fin traitement P0RNL0V3R pour ${directoryName}`, 'success');
-                return; 
+                return;
             }
 
-            if (!nzbUrl) throw new Error("NZB URL non trouvée");
+            if (!nzbUrl) throw new Error('NZB URL non trouvée');
 
             // 5. Gestion NZB
             const nzbPathFinal = path.join(NZB_DIR, `${directoryName}.nzb`);
             const nzbPathTemp = path.join(WORK_DIR, `${directoryName}.nzb`);
 
-            await this.downloadFile(nzbUrl, nzbPathTemp, true); 
+            await this.downloadFile(nzbUrl, nzbPathTemp, true);
             await fs.copy(nzbPathTemp, nzbPathFinal);
             this.log(`NZB copié vers ${nzbPathFinal}`, 'success');
 
@@ -79,7 +79,7 @@ class Processor {
             let finalName = this.extractFinalName(directoryName);
 
             if (!isClip) {
-                const [rows] = await db.query("SELECT COUNT(ID) as count FROM ODAY WHERE NAME LIKE ?", [`%${finalName}%`]);
+                const [rows] = await db.query('SELECT COUNT(ID) as count FROM ODAY WHERE NAME LIKE ?', [`%${finalName}%`]);
                 if (rows[0].count > 0) {
                     this.log(`Doublon détecté en DB pour ${finalName}, Upload annulé.`, 'warning');
                     skipUpload = true;
@@ -95,7 +95,6 @@ class Processor {
                 await db.query("INSERT INTO ODAY (NAME, LINK, STATUS) VALUES(?, 'OMG', '9')", [finalName]);
                 this.log(`Inséré en base de données: ${finalName}`, 'success');
             }
-
         } catch (error) {
             this.log(`Erreur process: ${error.message}`, 'error');
             console.error(error);
@@ -105,47 +104,38 @@ class Processor {
     // Nouvelle signature avec category
     announceToIRC(release, url, category) {
         const { BOLD, LIGHT_BLUE, NORMAL, ORANGE, RED, YELLOW, PINK, GREEN } = IRC_COLORS;
-        
-        let targetChan = "";
-        let message = "";
 
-        // --- ROUTAGE PAR CATEGORIE ---
-        
-        // Nettoyage de la catégorie pour la comparaison (par sécurité)
-        const catClean = category.toUpperCase();
+        const stripQuotes = (s) => (typeof s === 'string' ? s.replace(/^["']|["']$/g, '').trim() : s);
 
-        if (catClean.includes("UHD-CLIPS")) {
-            targetChan = process.env.IRC_CHAN_UHD || "#XXX2160";
-            // Style UHD
+        // ✅ Un seul canal (celui de ton .env)
+        const targetChan = stripQuotes(process.env.IRC_WRITE_CHAN_XXX || '#P0RNL0V3R');
+
+        const catClean = String(category || '').toUpperCase();
+
+        // ✅ EXACTEMENT les mêmes déclencheurs que ton code de départ
+        let message;
+        if (catClean.includes('UHD-CLIPS')) {
+            // UHD-CLIPS -> Rose + Vert
             message = `${BOLD}${PINK}${release}${NORMAL} => ${BOLD}${GREEN}${url}${NORMAL}${BOLD}`;
-
-        } else if (catClean.includes("TRANS")) {
-            targetChan = process.env.IRC_CHAN_TRANS || "#XXXGAYTRANS";
-            // Style Trans
+        } else if (catClean.includes('TRANS')) {
+            // TRANS -> Bleu clair + Orange
             message = `${BOLD}${LIGHT_BLUE}${release}${NORMAL} => ${BOLD}${ORANGE}${url}${NORMAL}${BOLD}`;
-
-        } else if (catClean.includes("HD-CLIPS")) {
-            targetChan = process.env.IRC_CHAN_HD || "#XXX1080";
-            // Style HD Classique
+        } else if (catClean.includes('HD-CLIPS')) {
+            // HD-CLIPS -> Rouge + Jaune
             message = `${BOLD}${RED}${release}${NORMAL} => ${BOLD}${YELLOW}${url}${NORMAL}${BOLD}`;
-
         } else {
-            // Fallback si la catégorie n'est pas reconnue (ex: P0RNL0V3R spécifique ou autre)
-             if (release.match(/P0RNL0V3R/i)) {
-                targetChan = process.env.IRC_CHAN_PORN || "#P0RNL0VER";
-            } else {
-                targetChan = process.env.IRC_CHAN_HD || "#XXX1080";
-            }
-            message = `${BOLD}${RED}${release}${NORMAL} => ${BOLD}${YELLOW}${url}${NORMAL}${BOLD}`;
+            // Autres -> (tu veux une couleur différente aussi ?)
+            // Je mets une 4e combinaison (Bleu clair + Vert) pour que ça soit visuellement distinct.
+            message = `${BOLD}${LIGHT_BLUE}${release}${NORMAL} => ${BOLD}${GREEN}${url}${NORMAL}${BOLD}`;
         }
 
-        console.log(`[DEBUG] Envoi IRC -> Cat: [${category}] -> Canal: "${targetChan}"`);
+        console.log(`[DEBUG] announceToIRC -> chan="${targetChan}" cat="${category}"`);
 
-        if (this.irc && targetChan) {
-            this.irc.say(targetChan, message);
+        if (this.ircAnnouncer && targetChan) {
+            this.ircAnnouncer.say(targetChan, message);
             this.log(`Annonce IRC envoyée sur ${targetChan} (Cat: ${category})`, 'info');
         } else {
-            this.log(`ERREUR IRC: Canal cible inconnu pour ${release}`, 'error');
+            this.log(`ERREUR IRC: announcer non prêt ou canal cible inconnu pour ${release}`, 'error');
         }
     }
 
@@ -179,10 +169,10 @@ class Processor {
             form.append('nzb', fs.createReadStream(nzbPath));
             form.append('upload', 'upload');
             const uploadUrl = `${process.env.UPLOAD_API_URL}?apikey=${process.env.UPLOAD_API_KEY}`;
-            
+
             await axios.post(uploadUrl, form, {
                 headers: { ...form.getHeaders() },
-                timeout: 60000 
+                timeout: 60000
             });
             this.log(`Upload UNFR réussi pour ${releaseName}`, 'success');
         } catch (e) {
